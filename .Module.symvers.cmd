@@ -1,0 +1,1 @@
+savedcmd_/home/mao/linux/SerialConnect2/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/mao/linux/SerialConnect2/Module.symvers -T /home/mao/linux/SerialConnect2/modules.order -i Module.symvers -e 

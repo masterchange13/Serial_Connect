@@ -1,0 +1,1 @@
+savedcmd_/home/mao/linux/SerialConnect2/myuart_enhance.ko := ld -r -m elf_x86_64 -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T scripts/module.lds -o /home/mao/linux/SerialConnect2/myuart_enhance.ko /home/mao/linux/SerialConnect2/myuart_enhance.o /home/mao/linux/SerialConnect2/myuart_enhance.mod.o

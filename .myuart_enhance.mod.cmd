@@ -1,0 +1,1 @@
+savedcmd_/home/mao/linux/SerialConnect2/myuart_enhance.mod := printf '%s\n'   myuart_enhance.o | awk '!x[$$0]++ { print("/home/mao/linux/SerialConnect2/"$$0) }' > /home/mao/linux/SerialConnect2/myuart_enhance.mod
