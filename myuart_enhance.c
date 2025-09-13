@@ -5,6 +5,7 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
+#include <linux/mutex.h>
 
 #define MYUART_VENDOR_ID  0x1a86
 #define MYUART_PRODUCT_ID 0x55d4
@@ -30,10 +31,11 @@ static const struct usb_device_id myuart_table[] = {
 };
 MODULE_DEVICE_TABLE(usb, myuart_table);
 
-/* ------------- 字符设备操作 ------------- */
+/* --------- 字符设备操作 --------- */
 static int myuart_open(struct inode *inode, struct file *file)
 {
-    file->private_data = myuart_device;
+    struct myuart_dev *dev = container_of(inode->i_cdev, struct myuart_dev, cdev);
+    file->private_data = dev;
     return 0;
 }
 
@@ -89,16 +91,19 @@ static ssize_t myuart_write(struct file *file, const char __user *buf, size_t co
     }
 
     mutex_lock(&dev->io_mutex);
+    printk(KERN_INFO "bulk_out=0x%02x, sending byte: %02x\n", dev->bulk_out, data[0]);
     retval = usb_bulk_msg(dev->udev,
                           usb_sndbulkpipe(dev->udev, dev->bulk_out),
                           data, count,
-                          (int *)&count, 5000);
+                          NULL, 5000);
+    printk(KERN_INFO "usb_bulk_msg retval=%d\n", retval);
     mutex_unlock(&dev->io_mutex);
 
     kfree(data);
     if (retval)
         return retval;
 
+    printk(KERN_INFO "u success write data, myuart: device ready /dev/%s\n", DEVICE_NAME);
     return count;
 }
 
@@ -110,7 +115,7 @@ static const struct file_operations myuart_fops = {
     .write = myuart_write,
 };
 
-/* ------------- USB 驱动 probe / disconnect ------------- */
+/* --------- USB 驱动 probe / disconnect --------- */
 static int myuart_probe(struct usb_interface *interface,
                         const struct usb_device_id *id)
 {
@@ -132,14 +137,19 @@ static int myuart_probe(struct usb_interface *interface,
 
     iface_desc = interface->cur_altsetting;
 
-    /* 自动找到 bulk in/out 端点 */
-    for (i = 0; i < iface_desc->desc.bNumEndpoints; i++) {
-        endpoint = &iface_desc->endpoint[i].desc;
-        if (usb_endpoint_is_bulk_in(endpoint))
-            myuart_device->bulk_in = endpoint->bEndpointAddress;
-        if (usb_endpoint_is_bulk_out(endpoint))
-            myuart_device->bulk_out = endpoint->bEndpointAddress;
+    /* 只扫描数据接口 (CDC Data, bInterfaceClass = 10) */
+    if (iface_desc->desc.bInterfaceClass == 10) {
+        for (i = 0; i < iface_desc->desc.bNumEndpoints; i++) {
+            endpoint = &iface_desc->endpoint[i].desc;
+            if (usb_endpoint_is_bulk_in(endpoint))
+                myuart_device->bulk_in = endpoint->bEndpointAddress;
+            if (usb_endpoint_is_bulk_out(endpoint))
+                myuart_device->bulk_out = endpoint->bEndpointAddress;
+        }
     }
+
+    printk(KERN_INFO "myuart: bulk_in=0x%02x, bulk_out=0x%02x\n",
+           myuart_device->bulk_in, myuart_device->bulk_out);
 
     /* 注册字符设备 */
     cdev_init(&myuart_device->cdev, &myuart_fops);
@@ -164,20 +174,20 @@ static void myuart_disconnect(struct usb_interface *interface)
     printk(KERN_INFO "myuart: device disconnected\n");
 }
 
-/* ------------- USB 驱动结构体 ------------- */
+/* --------- USB 驱动结构体 --------- */
 static struct usb_driver myuart_driver = {
-    .name = "myuart2",
+    .name = "myuart",
     .id_table = myuart_table,
     .probe = myuart_probe,
     .disconnect = myuart_disconnect,
 };
 
-/* ------------- 模块入口/出口 ------------- */
+/* --------- 模块入口/出口 --------- */
 static int __init myuart_init(void)
 {
     int retval;
 
-    /* 创建设备号和class */
+    /* 创建设备号和 class */
     alloc_chrdev_region(&myuart_devno, 0, 1, DEVICE_NAME);
 
     myuart_class = class_create(DEVICE_NAME);
@@ -186,7 +196,7 @@ static int __init myuart_init(void)
         unregister_chrdev_region(myuart_devno, 1);
         return PTR_ERR(myuart_class);
     }
-        
+
     device_create(myuart_class, NULL, myuart_devno, NULL, DEVICE_NAME);
 
     retval = usb_register(&myuart_driver);
